@@ -55,23 +55,24 @@ function uploadFile(client, localPath, remotePath) {
 async function deploy() {
   let client;
   try {
-    // First build with correct deploy-url
-    console.log('\nBuilding Angular app with /cursor/ base and deploy url...');
-    execSync('ng build --configuration=production --base-href /cursor/ --deploy-url /cursor/', { stdio: 'inherit' });
+    // Build the app - no need for base-href or deploy-url since main index.html handles that
+    console.log('\nBuilding Angular app...');
+    execSync('ng build --configuration=production', { stdio: 'inherit' });
     
     client = await createClient();
     console.log('\nConnected to FTP root (cursor directory)');
 
     const distPath = './dist/kleexck';
-    const filesToUpload = fs.readdirSync(distPath);
+    const filesToUpload = fs.readdirSync(distPath)
+      .filter(file => file !== 'index.html'); // Skip index.html
 
-    console.log(`\nUploading ${filesToUpload.length} files:`);
+    console.log(`\nUploading ${filesToUpload.length} files to cursor directory:`);
     console.log(filesToUpload);
 
-    // Upload each file directly to root
+    // Upload each file to cursor directory
     for (const file of filesToUpload) {
       const localPath = path.join(distPath, file);
-      const remotePath = `/${file}`; // Upload directly to root
+      const remotePath = `/${file}`; // Already in cursor directory
       await uploadFile(client, localPath, remotePath);
     }
 
