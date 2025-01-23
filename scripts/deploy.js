@@ -56,8 +56,8 @@ async function deploy() {
   let client;
   try {
     // First build with correct deploy-url
-    console.log('\nBuilding Angular app with /cursor/ deploy-url...');
-    execSync('ng build --configuration=production --deploy-url /cursor/', { stdio: 'inherit' });
+    console.log('\nBuilding Angular app with /cursor/ base and deploy url...');
+    execSync('ng build --configuration=production --base-href /cursor/ --deploy-url /cursor/', { stdio: 'inherit' });
     
     client = await createClient();
     console.log('\nConnected to FTP root (cursor directory)');
