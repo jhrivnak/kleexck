@@ -3,6 +3,7 @@
 /tmp
 /out-tsc
 /bazel-out
+/.angular
 
 # Node
 /node_modules
@@ -33,7 +34,13 @@ testem.log
 .DS_Store
 Thumbs.db
 
-# Secrets
-/secret/ftp.txt
-/secret/ftp.json
+# Secrets and Credentials
+/secret/
 .env
+*.pem
+*.key
+config/credentials.js
+
+# Build artifacts
+*.js.map
+*.css.map

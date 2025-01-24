@@ -8,7 +8,7 @@ const INITIAL_PLAYER: Player = {
   y: 100,
   width: 32,
   height: 32,
-  health: 100,
+  health: 5,
   speed: 5
 };
 
@@ -22,6 +22,13 @@ const INITIAL_PLAYER: Player = {
       <div class="game-info">
         <p>Use arrow keys or WASD to move the red square</p>
       </div>
+      <div class="health-container">
+        <div class="hearts">
+          <span *ngFor="let heart of hearts" class="heart">
+            {{ heart ? '❤️' : '🤍' }}
+          </span>
+        </div>
+      </div>
       <canvas #gameCanvas width="800" height="600" style="border: 1px solid #000;"></canvas>
     </div>
   `,
@@ -31,6 +38,7 @@ const INITIAL_PLAYER: Player = {
       flex-direction: column;
       align-items: center;
       gap: 20px;
+      position: relative;
     }
     h1 {
       color: #333;
@@ -43,6 +51,17 @@ const INITIAL_PLAYER: Player = {
       padding: 10px;
       border-radius: 5px;
       box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .health-container {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      z-index: 10;
+    }
+    .hearts {
+      display: flex;
+      gap: 5px;
+      font-size: 24px;
     }
     canvas {
       background-color: white;
@@ -59,6 +78,13 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     objects: [],
     isPaused: false
   };
+
+  get hearts(): boolean[] {
+    const totalHearts = 5;
+    return Array(totalHearts).fill(false).map((_, index) => 
+      index < this.gameState.player.health
+    );
+  }
 
   constructor() {
     console.log('GameComponent constructed');
@@ -84,7 +110,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
-  private handleKeyDown(e: KeyboardEvent): void {
+  public handleKeyDown(e: KeyboardEvent): void {
     const { player } = this.gameState;
     const newPlayer = { ...player };
 
