@@ -8,72 +8,73 @@ A simple browser-based game built with Angular. Move a red square using arrow ke
 - Angular CLI (`npm install -g @angular/cli`)
 - FTP access for deployment
 
-## Setup
+## Local Development
 
-1. Clone the repository:
+Quick start:
 ```bash
-git clone https://github.com/jhrivnak/kleexck.git
-cd kleexck
+node scripts/dev.js start    # Start local server
+node scripts/dev.js test     # Run tests
+node scripts/dev.js deploy   # Deploy to dev
+node scripts/dev.js verify   # Check dev site
 ```
 
-2. Install dependencies:
-```bash
-npm install
-```
-
-3. Set up environment:
-```bash
-cp .env.example .env
-# Edit .env with your credentials
-```
-
-4. Configure FTP deployment:
-```bash
-# Create secret/ftp.json with your FTP credentials
-# Format:
-{
-  "host": "your-ftp-host",
-  "user": "your-ftp-user",
-  "password": "your-password",
-  "port": 21,
-  "directory": "/your/upload/directory"
-}
-```
-
-## Development
-
-1. Start development server:
+1. Start the development server:
 ```bash
 ng serve
 ```
-Visit `http://localhost:4200`
+This will:
+- Start a local server at `http://localhost:4200`
+- Enable hot reload (changes appear instantly)
+- Show compilation errors in real-time
 
-2. Run tests:
+2. Make your changes:
+- Edit files in `src/` directory
+- Changes will automatically refresh in browser
+- Check browser console (F12) for errors
+
+3. Test your changes:
 ```bash
-ng test
+ng test                 # Run unit tests
+ng serve               # Manual testing in browser
 ```
 
-3. Lint code:
+## Deploying to Dev
+
+When your changes are ready for the dev site:
+
+1. Commit your changes:
 ```bash
-ng lint
+git add .
+git commit -m "your message"
+git push
 ```
 
-## Deployment
-
-The project uses FTP for deployment. Files are uploaded to a specified directory.
-
-1. Build and deploy:
+2. Deploy to dev.kleexck.com:
 ```bash
-node scripts/deploy.js
+node scripts/dev.js deploy
 ```
 
-Note: Requires proper FTP credentials in `secret/ftp.json`
+This will:
+- Build the app for production
+- Upload files to `/cursor/` directory
+- Game will be available at https://dev.kleexck.com/
+
+3. Verify deployment:
+```bash
+node scripts/dev.js verify   # Quick status check
+```
+Then manually:
+- Check https://dev.kleexck.com/
+- Test all features
+- Check browser console for errors
 
 ## Project Structure
 
 - `src/app/components/game/` - Game component and logic
 - `src/app/types/` - TypeScript interfaces and types
 - `scripts/` - Deployment and utility scripts
+  - `dev.js` - Development helper commands
+  - `deploy.js` - FTP deployment script
 - `config/` - Configuration files
 - `secret/` - Credentials (not in git)
 
