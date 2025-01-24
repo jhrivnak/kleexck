@@ -87,6 +87,71 @@ function createClient(ftpConfig) {
   });
 }
 
+function listFiles(client, path = '/') {
+  return new Promise((resolve, reject) => {
+    client.list(path, (err, list) => {
+      if (err) {
+        log('LIST ERROR', { error: err.message, path });
+        reject(err);
+        return;
+      }
+      resolve(list || []);
+    });
+  });
+}
+
+async function getAllFiles(client) {
+  try {
+    // Get files from both root and with leading slash
+    const [rootFiles, slashFiles] = await Promise.all([
+      listFiles(client, '/'),
+      listFiles(client, '/*')
+    ]);
+
+    // Combine and deduplicate files
+    const allFiles = new Map();
+    [...rootFiles, ...slashFiles].forEach(file => {
+      // Remove leading slash for consistency
+      const name = file.name.replace(/^\//, '');
+      if (!allFiles.has(name)) {
+        allFiles.set(name, file);
+      }
+    });
+
+    return Array.from(allFiles.values());
+  } catch (error) {
+    log('GET_ALL_FILES ERROR', { error: error.message });
+    throw error;
+  }
+}
+
+function deleteFile(client, filename) {
+  return new Promise((resolve) => {
+    // Try to delete both with and without leading slash
+    const paths = [filename, `/${filename}`];
+    let completed = 0;
+    let successes = 0;
+
+    paths.forEach(path => {
+      log('ATTEMPTING DELETE', { path });
+      client.delete(path, (err) => {
+        completed++;
+        if (err) {
+          log('DELETE ATTEMPT FAILED', { path, error: err.message });
+        } else {
+          log('DELETE SUCCESS', { path });
+          successes++;
+        }
+
+        // Resolve if either path succeeds or both attempts are done
+        if (successes > 0 || completed === paths.length) {
+          resolve();
+        }
+      });
+    });
+  });
+}
+
 function uploadFile(client, localPath, remotePath) {
   return new Promise((resolve, reject) => {
     const normalizedLocalPath = localPath.replace(/\\/g, '/');
@@ -109,6 +174,53 @@ function uploadFile(client, localPath, remotePath) {
       }
     });
   });
+}
+
+async function cleanupOldFiles(client, newFiles) {
+  try {
+    // Get a complete list of files
+    const existingFiles = await getAllFiles(client);
+    
+    log('EXISTING FILES', { 
+      files: existingFiles.map(f => f.name.replace(/^\//, '')),
+      count: existingFiles.length
+    });
+
+    // Group new files by type (e.g., main.*.js, polyfills.*.js)
+    const newFileTypes = new Set(newFiles.map(file => {
+      const match = file.match(/^([^.]+).*\.(js|css|txt)$/);
+      return match ? match[1] : null;
+    }).filter(Boolean));
+
+    log('FILE TYPES TO CLEAN', { types: Array.from(newFileTypes) });
+
+    // Delete old versions of files
+    const deletePromises = [];
+    for (const file of existingFiles) {
+      const name = file.name.replace(/^\//, '');
+      if (name === '.' || name === '..' || name === '.ftpquota' || name === 'TARGET.TXT') {
+        continue;
+      }
+      
+      const match = name.match(/^([^.]+).*\.(js|css|txt)$/);
+      if (match && newFileTypes.has(match[1])) {
+        log('QUEUING DELETE', { filename: name, type: match[1] });
+        deletePromises.push(deleteFile(client, name));
+      }
+    }
+
+    // Wait for all deletes to complete
+    if (deletePromises.length > 0) {
+      log('STARTING CLEANUP', { filesToDelete: deletePromises.length });
+      await Promise.all(deletePromises);
+      log('CLEANUP COMPLETE');
+    } else {
+      log('NO FILES TO CLEAN');
+    }
+  } catch (error) {
+    log('CLEANUP ERROR', { error: error.message, stack: error.stack });
+    throw error;
+  }
 }
 
 async function deploy() {
@@ -135,6 +247,9 @@ async function deploy() {
       .filter(file => file !== 'index.html'); // Skip index.html for now
 
     log('FILES TO UPLOAD', { files: filesToUpload });
+
+    // Clean up old files first
+    await cleanupOldFiles(client, filesToUpload);
 
     // Upload each file
     for (const file of filesToUpload) {
