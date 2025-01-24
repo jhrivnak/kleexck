@@ -2,12 +2,37 @@
 <html lang="en" data-critters-container>
 <head>
   <meta charset="utf-8">
-  <title>kleexck</title>
+  <title>DEV | kleexck</title>
   <base href="/">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
-<style>html,body{margin:0;padding:0;font-family:Arial,sans-serif}</style><link rel="stylesheet" href="styles.46ec3e177bb511ff.css" media="print" onload="this.media='all'"><noscript><link rel="stylesheet" href="styles.46ec3e177bb511ff.css"></noscript></head>
+<style>html,body{margin:0;padding:0;font-family:Arial,sans-serif}</style>
+<script>
+function loadScript(pattern) {
+    fetch('/cursor/')
+        .then(response => response.text())
+        .then(html => {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const files = Array.from(doc.querySelectorAll('a')).map(a => a.href);
+            const file = files.find(f => f.includes(pattern));
+            if (file) {
+                const script = document.createElement('script');
+                script.src = file;
+                script.type = 'module';
+                document.body.appendChild(script);
+            }
+        });
+}
+window.onload = function() {
+    loadScript('runtime');
+    loadScript('polyfills');
+    loadScript('main');
+    loadScript('styles');
+}
+</script>
+</head>
 <body>
   <app-root></app-root>
-<script src="runtime.2fc138c992775adb.js" type="module"></script><script src="polyfills.0c1802dc6d92142d.js" type="module"></script><script src="main.4a2806e12fb19906.js" type="module"></script></body>
-</html> 
+</body>
+</html>

@@ -2,7 +2,7 @@ const crypto = require('crypto');
 
 // This key should be stored securely, not in the code
 const ENCRYPTION_KEY = crypto.scryptSync(
-  process.env.DEPLOY_KEY || 'your-secure-key-here',
+  'kleexck-dev-key-2024',
   'salt',
   32
 );

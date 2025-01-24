@@ -3,24 +3,73 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-// Read FTP credentials from JSON file
-const ftpConfig = JSON.parse(fs.readFileSync('./secret/ftp.json', 'utf8'));
+// Ensure logs directory exists
+const logsDir = path.resolve('./logs');
+fs.mkdirSync(logsDir, { recursive: true });
 
-function createClient() {
+function log(message, details = null) {
+  const logFile = path.join(logsDir, 'deploymentLog.json');
+  const timestamp = new Date().toISOString();
+  const logEntry = { timestamp, message, details };
+  
+  let logs = [];
+  try {
+    if (fs.existsSync(logFile)) {
+      logs = JSON.parse(fs.readFileSync(logFile, 'utf8'));
+    }
+  } catch (err) {
+    console.error('Error reading log file:', err);
+  }
+  
+  logs.unshift(logEntry);
+  try {
+    fs.writeFileSync(logFile, JSON.stringify(logs, null, 2));
+  } catch (err) {
+    console.error('Error writing to log file:', err);
+  }
+  console.log(`[${timestamp}] ${message}`, details || '');
+}
+
+function loadFtpConfig() {
+  try {
+    const ftpConfig = JSON.parse(fs.readFileSync('./secret/ftp.json', 'utf8'));
+    if (!ftpConfig.host || !ftpConfig.user || !ftpConfig.password) {
+      throw new Error('Missing required FTP configuration');
+    }
+    return ftpConfig;
+  } catch (err) {
+    log('FTP CONFIG ERROR', { error: err.message });
+    throw err;
+  }
+}
+
+function createClient(ftpConfig) {
   return new Promise((resolve, reject) => {
     const client = new Client();
 
     client.on('ready', () => {
-      console.log('FTP CONNECTION: Established successfully');
+      log('FTP CONNECTION: Established successfully', {
+        host: ftpConfig.host,
+        user: ftpConfig.user
+      });
       resolve(client);
     });
 
     client.on('error', (err) => {
-      console.error('FTP CONNECTION ERROR:', err);
+      log('FTP CONNECTION ERROR:', { 
+        error: err.message,
+        host: ftpConfig.host,
+        user: ftpConfig.user
+      });
       reject(err);
     });
 
     try {
+      log('CONNECTING TO FTP', {
+        host: ftpConfig.host,
+        user: ftpConfig.user
+      });
+      
       client.connect({
         host: ftpConfig.host,
         user: ftpConfig.user,
@@ -28,7 +77,11 @@ function createClient() {
         port: ftpConfig.port || 21
       });
     } catch (connectError) {
-      console.error('CONNECTION ATTEMPT FAILED:', connectError);
+      log('CONNECTION ATTEMPT FAILED:', { 
+        error: connectError.message,
+        host: ftpConfig.host,
+        user: ftpConfig.user
+      });
       reject(connectError);
     }
   });
@@ -36,16 +89,22 @@ function createClient() {
 
 function uploadFile(client, localPath, remotePath) {
   return new Promise((resolve, reject) => {
-    // Convert Windows path to POSIX
     const normalizedLocalPath = localPath.replace(/\\/g, '/');
-    console.log(`UPLOADING: ${normalizedLocalPath} -> ${remotePath}`);
+    log('UPLOADING FILE', { localPath: normalizedLocalPath, remotePath });
     
     client.put(normalizedLocalPath, remotePath, (err) => {
       if (err) {
-        console.error(`UPLOAD ERROR: ${err.message}`);
+        log('UPLOAD ERROR', { 
+          localPath: normalizedLocalPath, 
+          remotePath, 
+          error: err.message 
+        });
         reject(err);
       } else {
-        console.log('UPLOAD SUCCESS');
+        log('UPLOAD SUCCESS', { 
+          localPath: normalizedLocalPath, 
+          remotePath 
+        });
         resolve();
       }
     });
@@ -55,38 +114,54 @@ function uploadFile(client, localPath, remotePath) {
 async function deploy() {
   let client;
   try {
-    // Build the app - no need for base-href or deploy-url since main index.html handles that
-    console.log('\nBuilding Angular app...');
-    execSync('ng build --configuration=production', { stdio: 'inherit' });
+    log('DEPLOYMENT START', { 
+      description: 'Deploying updated game component' 
+    });
     
-    client = await createClient();
-    console.log('\nConnected to FTP root (cursor directory)');
-
+    // Load FTP config first
+    const ftpConfig = loadFtpConfig();
+    log('FTP CONFIG LOADED');
+    
+    // Build the app
+    log('BUILD START');
+    execSync('ng build --configuration=production', { stdio: 'inherit' });
+    log('BUILD SUCCESS');
+    
+    // Connect to FTP
+    client = await createClient(ftpConfig);
+    
     const distPath = './dist/kleexck';
     const filesToUpload = fs.readdirSync(distPath)
-      .filter(file => file !== 'index.html'); // Skip index.html
+      .filter(file => file !== 'index.html'); // Skip index.html for now
 
-    console.log(`\nUploading ${filesToUpload.length} files to cursor directory:`);
-    console.log(filesToUpload);
+    log('FILES TO UPLOAD', { files: filesToUpload });
 
-    // Upload each file to cursor directory
+    // Upload each file
     for (const file of filesToUpload) {
       const localPath = path.join(distPath, file);
-      const remotePath = `/${file}`; // Already in cursor directory
+      const remotePath = `/${file}`; // Upload to root of cursor directory
       await uploadFile(client, localPath, remotePath);
     }
 
-    console.log('\nDeployment complete!');
+    log('DEPLOYMENT SUCCESS');
   } catch (error) {
-    console.error('DEPLOYMENT FAILED:', error.message);
+    log('DEPLOYMENT ERROR', { error: error.message, stack: error.stack });
     throw error;
   } finally {
     if (client) {
       client.end();
+      log('FTP DISCONNECTED');
     }
   }
 }
 
+// Run deployment
 deploy()
-  .then(() => process.exit(0))
-  .catch(() => process.exit(1)); 
+  .then(() => {
+    log('PROCESS COMPLETE');
+    process.exit(0);
+  })
+  .catch((error) => {
+    log('PROCESS FAILED', { error: error.message });
+    process.exit(1);
+  }); 

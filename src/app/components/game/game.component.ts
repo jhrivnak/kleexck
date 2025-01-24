@@ -9,7 +9,8 @@ const INITIAL_PLAYER: Player = {
   width: 32,
   height: 32,
   health: 5,
-  speed: 5
+  speed: 5,
+  mana: 100
 };
 
 @Component({
@@ -18,7 +19,6 @@ const INITIAL_PLAYER: Player = {
   imports: [CommonModule],
   template: `
     <div class="game-container">
-      <h1>Play Kleexck</h1>
       <div class="game-info">
         <p>Use arrow keys or WASD to move the red square</p>
       </div>
@@ -27,6 +27,9 @@ const INITIAL_PLAYER: Player = {
           <span *ngFor="let heart of hearts" class="heart">
             {{ heart ? '❤️' : '🤍' }}
           </span>
+        </div>
+        <div class="mana-bar">
+          <div class="mana-fill" [style.width.%]="manaPercentage"></div>
         </div>
       </div>
       <canvas #gameCanvas width="800" height="600" style="border: 1px solid #000;"></canvas>
@@ -57,11 +60,28 @@ const INITIAL_PLAYER: Player = {
       bottom: 20px;
       left: 20px;
       z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
     }
     .hearts {
       display: flex;
       gap: 5px;
       font-size: 24px;
+    }
+    .mana-bar {
+      width: 150px;
+      height: 12px;
+      background-color: #444;
+      border-radius: 6px;
+      overflow: hidden;
+      border: 2px solid #333;
+    }
+    .mana-fill {
+      height: 100%;
+      background-color: #0066ff;
+      border-radius: 4px;
+      transition: width 0.3s ease;
     }
     canvas {
       background-color: white;
@@ -84,6 +104,10 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     return Array(totalHearts).fill(false).map((_, index) => 
       index < this.gameState.player.health
     );
+  }
+
+  get manaPercentage(): number {
+    return (this.gameState.player.mana / 100) * 100;
   }
 
   constructor() {
