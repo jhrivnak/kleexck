@@ -418,15 +418,18 @@ async function rollback() {
       if (file.name === '.' || file.name === '..') continue;
       
       const rollbackPath = `${REMOTE_DIRS.ROLLBACK}/${file.name}`;
-      const currentPath = `${REMOTE_DIRS.CURRENT}/${file.name}`;
+      const currentPath = `/${file.name}`;  // Root of /cursor/
       
-      await new Promise((resolve, reject) => {
-        client.rename(rollbackPath, currentPath, (err) => {
+      // Copy rollback file to current directory
+      await new Promise((resolve) => {
+        client.get(rollbackPath, (err, stream) => {
           if (err) {
-            reject(err);
-          } else {
+            log('ROLLBACK ERROR', { error: err.message });
             resolve();
+            return;
           }
+          stream.once('close', resolve);
+          client.put(stream, currentPath);
         });
       });
     }
