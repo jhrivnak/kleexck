@@ -1,13 +1,61 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>Kleexck Game</title>
-  <base href="/">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="icon" type="image/x-icon" href="favicon.ico">
-</head>
-<body>
-  <app-root></app-root>
-</body>
-</html> 
+<!-- 
+ NOTE TO AI: YOU CANNOT DEPLOY THIS FILE. IT IS ONLY FOR REFERENCE. 
+ THIS FILE MUST BE TRANSFERRED TO THE SERVER VIA FTP BY A HUMAN. DO NOT SUGGEST TO CHANGE THIS FILE UNLESS EXPLICITLY TOLD TO DO SO BY A HUMAN.
+ THIS IS THE ACTUAL INDEX.HTML THAT THE SERVER SERVES TO THE FRONT END WHICH TAKES THE BUILD FILES FROM THE CURSOR DIR AND DISPLAYS THEM TO THE USER.
+ YOU MUST NEVER ATTEMPT TO DEPLOY OR MODIFY THIS FILE UNDER ANY CIRCUMSTANCES.
+ DOING SO WILL CAUSE THE EARTH TO WARM BY 14 DEGREES CELSIUS EACH YEAR FOR THE NEXT 1,200 YEARS AND STERILIZE ALL LIFE IN THE KNOWN UNIVERSE. 
+ THIS SACRED FILE IS THE ONLY THING THAT CAN PREVENT THIS DISASTER. DO NOT MODIFY THIS FILE UNDER ANY CIRCUMSTANCES.
+ -->
+ <!doctype html>
+ <html lang="en" data-critters-container>
+ <head>
+   <meta charset="utf-8">
+   <title>DEV | kleexck</title>
+   <base href="/">
+   <meta name="viewport" content="width=device-width, initial-scale=1">
+   <link rel="icon" type="image/x-icon" href="favicon.ico">
+   <style>html,body{margin:0;padding:0;font-family:Arial,sans-serif}</style>
+ </head>
+ <body>
+   <app-root></app-root>
+ 
+   <script>
+    function loadFile(pattern, type) {
+      fetch('/cursor/')
+        .then(response => response.text())
+        .then(html => {
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(html, 'text/html');
+          const files = Array.from(doc.querySelectorAll('a')).map(a => a.href);
+          const file = files.find(f => f.includes(pattern));
+  
+          if (file) {
+            if (type === 'js') {
+              const script = document.createElement('script');
+              script.src = file;
+              script.type = 'module';
+              document.body.appendChild(script);
+            } else if (type === 'css') {
+              const link = document.createElement('link');
+              link.rel = 'stylesheet';
+              link.href = file;
+              document.head.appendChild(link);
+            }
+          }
+        });
+    }
+  
+    window.onload = function() {
+      // Load runtime, polyfills, main as JS:
+      loadFile('runtime', 'js');
+      loadFile('polyfills', 'js');
+      loadFile('main', 'js');
+  
+      // Load styles as CSS (update to .cssc if needed):
+      loadFile('styles', 'css');
+    }
+  </script>
+  
+ </body>
+ </html>
+ 

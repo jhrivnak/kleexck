@@ -7,6 +7,19 @@ const { execSync } = require('child_process');
 const logsDir = path.resolve('./logs');
 fs.mkdirSync(logsDir, { recursive: true });
 
+// Constants for remote directories
+const REMOTE_DIRS = {
+  BASE: '',  // Base directory is already /dev.kleexck.com/cursor/
+  DIST: '',  // Files go directly in /cursor/
+  CURRENT: '',  // No current subdirectory
+  ROLLBACK: '/rollback',
+  VERSIONS: '/versions'
+};
+
+function getTimestamp() {
+  return new Date().toISOString().replace(/[:.]/g, '-');
+}
+
 function log(message, details = null) {
   const logFile = path.join(logsDir, 'deploymentLog.json');
   const timestamp = new Date().toISOString();
@@ -223,60 +236,252 @@ async function cleanupOldFiles(client, newFiles) {
   }
 }
 
+async function ensureRemoteDirectories(client) {
+  const dirs = Object.values(REMOTE_DIRS);
+  for (const dir of dirs) {
+    await new Promise((resolve, reject) => {
+      client.mkdir(dir, true, (err) => {
+        if (err) {
+          log('MKDIR WARNING', { dir, error: err.message });
+        }
+        resolve();
+      });
+    });
+  }
+}
+
+async function backupCurrentVersion(client) {
+  try {
+    // First, check if there's a current version
+    const currentFiles = await listFiles(client, '');  // Look in root /cursor/
+    if (currentFiles.length === 0) {
+      log('NO CURRENT VERSION TO BACKUP');
+      return;
+    }
+
+    const timestamp = getTimestamp();
+    const versionDir = `${REMOTE_DIRS.VERSIONS}/${timestamp}`;
+    const rollbackDir = REMOTE_DIRS.ROLLBACK;
+
+    // Create version directory
+    await new Promise((resolve) => {
+      client.mkdir(versionDir, true, () => resolve());
+    });
+
+    // Copy current files to both rollback and versions
+    for (const file of currentFiles) {
+      if (file.name === '.' || file.name === '..' || file.name === 'TARGET.TXT' || file.name === 'rollback' || file.name === 'versions') continue;
+      
+      const currentPath = `/${file.name}`;  // Root of /cursor/
+      const versionPath = `${versionDir}/${file.name}`;
+      const rollbackPath = `${rollbackDir}/${file.name}`;
+
+      await Promise.all([
+        new Promise((resolve) => {
+          client.rename(currentPath, versionPath, () => resolve());
+        }),
+        new Promise((resolve) => {
+          client.get(currentPath, (err, stream) => {
+            if (err) {
+              log('BACKUP ERROR', { error: err.message });
+              resolve();
+              return;
+            }
+            stream.once('close', resolve);
+            client.put(stream, rollbackPath);
+          });
+        })
+      ]);
+    }
+    
+    log('BACKUP COMPLETE', { version: timestamp });
+    return timestamp;
+  } catch (error) {
+    log('BACKUP ERROR', { error: error.message });
+    throw error;
+  }
+}
+
+async function verifyDeploymentTarget(client) {
+  try {
+    // First verify the file exists
+    const files = await listFiles(client, '');
+    const targetFile = files.find(file => file.name === 'TARGET.TXT');
+    if (!targetFile) {
+      throw new Error('TARGET.TXT not found in deployment directory. Deployment aborted for safety.');
+    }
+
+    // Now verify its contents
+    const expectedContent = '4d43f11d-0bf6-471e-90c9-e0387f925b05';
+    const content = await new Promise((resolve, reject) => {
+      let data = '';
+      client.get('TARGET.TXT', (err, stream) => {
+        if (err) {
+          reject(new Error('Could not read TARGET.TXT'));
+          return;
+        }
+        stream.on('data', chunk => data += chunk);
+        stream.on('end', () => resolve(data.trim()));
+        stream.on('error', err => reject(err));
+      });
+    });
+
+    if (content !== expectedContent) {
+      throw new Error('TARGET.TXT content does not match expected value. Deployment aborted for safety.');
+    }
+
+    log('TARGET.TXT verified', { path: '/dev.kleexck.com/cursor/', content: expectedContent });
+  } catch (error) {
+    log('TARGET VERIFICATION FAILED', { error: error.message });
+    throw error;
+  }
+}
+
 async function deploy() {
   let client;
   try {
-    log('DEPLOYMENT START', { 
-      description: 'Deploying updated game component' 
-    });
+    log('DEPLOYMENT START', { timestamp: getTimestamp() });
     
-    // Load FTP config first
     const ftpConfig = loadFtpConfig();
     log('FTP CONFIG LOADED');
     
     // Build the app
     log('BUILD START');
-    execSync('ng build --configuration=production', { stdio: 'inherit' });
+    execSync('ng build --configuration=development', { stdio: 'inherit' });
     log('BUILD SUCCESS');
     
     // Connect to FTP
     client = await createClient(ftpConfig);
     
+    // Verify TARGET.TXT exists
+    await verifyDeploymentTarget(client);
+    
+    // Ensure directory structure exists
+    await ensureRemoteDirectories(client);
+    
+    // Backup current version
+    await backupCurrentVersion(client);
+    
     const distPath = './dist/kleexck';
     const filesToUpload = fs.readdirSync(distPath)
-      .filter(file => file !== 'index.html'); // Skip index.html for now
+      .filter(file => file !== 'index.html');
 
     log('FILES TO UPLOAD', { files: filesToUpload });
-
-    // Clean up old files first
-    await cleanupOldFiles(client, filesToUpload);
-
-    // Upload each file
+    
+    // Upload new files to root directory
     for (const file of filesToUpload) {
       const localPath = path.join(distPath, file);
-      const remotePath = `/${file}`; // Upload to root of cursor directory
+      const remotePath = `/${file}`;  // Upload directly to /cursor/
       await uploadFile(client, localPath, remotePath);
     }
-
-    log('DEPLOYMENT SUCCESS');
+    
+    log('DEPLOYMENT SUCCESS', { timestamp: getTimestamp() });
   } catch (error) {
     log('DEPLOYMENT ERROR', { error: error.message, stack: error.stack });
     throw error;
   } finally {
     if (client) {
       client.end();
-      log('FTP DISCONNECTED');
     }
   }
 }
 
-// Run deployment
-deploy()
-  .then(() => {
-    log('PROCESS COMPLETE');
-    process.exit(0);
-  })
-  .catch((error) => {
-    log('PROCESS FAILED', { error: error.message });
-    process.exit(1);
-  }); 
+async function rollback() {
+  let client;
+  try {
+    log('ROLLBACK START');
+    
+    const ftpConfig = loadFtpConfig();
+    client = await createClient(ftpConfig);
+    
+    // Check if rollback exists
+    const rollbackFiles = await listFiles(client, REMOTE_DIRS.ROLLBACK);
+    if (rollbackFiles.length === 0) {
+      throw new Error('No rollback version available');
+    }
+    
+    // Move current to versions as backup
+    const timestamp = await backupCurrentVersion(client);
+    log('CURRENT VERSION BACKED UP', { version: timestamp });
+    
+    // Move rollback to current
+    for (const file of rollbackFiles) {
+      if (file.name === '.' || file.name === '..') continue;
+      
+      const rollbackPath = `${REMOTE_DIRS.ROLLBACK}/${file.name}`;
+      const currentPath = `${REMOTE_DIRS.CURRENT}/${file.name}`;
+      
+      await new Promise((resolve, reject) => {
+        client.rename(rollbackPath, currentPath, (err) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve();
+          }
+        });
+      });
+    }
+    
+    log('ROLLBACK SUCCESS');
+  } catch (error) {
+    log('ROLLBACK ERROR', { error: error.message });
+    throw error;
+  } finally {
+    if (client) {
+      client.end();
+    }
+  }
+}
+
+async function listVersions() {
+  let client;
+  try {
+    const ftpConfig = loadFtpConfig();
+    client = await createClient(ftpConfig);
+    
+    const versions = await listFiles(client, REMOTE_DIRS.VERSIONS);
+    const versionList = versions
+      .filter(v => v.name !== '.' && v.name !== '..')
+      .map(v => v.name)
+      .sort()
+      .reverse();
+    
+    console.log('\nAvailable versions:');
+    versionList.forEach(v => console.log(`- ${v}`));
+    
+    return versionList;
+  } catch (error) {
+    log('LIST VERSIONS ERROR', { error: error.message });
+    throw error;
+  } finally {
+    if (client) {
+      client.end();
+    }
+  }
+}
+
+// Export commands
+module.exports = {
+  deploy,
+  rollback,
+  listVersions
+};
+
+// If running directly from command line
+if (require.main === module) {
+  const command = process.argv[2];
+  
+  switch (command) {
+    case 'deploy':
+      deploy().catch(console.error);
+      break;
+    case 'rollback':
+      rollback().catch(console.error);
+      break;
+    case 'list-versions':
+      listVersions().catch(console.error);
+      break;
+    default:
+      console.log('Usage: node deploy.js [deploy|rollback|list-versions]');
+  }
+} 

@@ -71,3 +71,6 @@ pids
 .ftpconfig
 .ftpignore
 ftp-creds.*
+
+# Assets
+/assets/
