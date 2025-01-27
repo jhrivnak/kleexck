@@ -239,7 +239,8 @@ async function cleanupOldFiles(client, newFiles) {
 async function ensureRemoteDirectories(client) {
   const dirs = Object.values(REMOTE_DIRS);
   for (const dir of dirs) {
-    await new Promise((resolve, reject) => {
+    if (!dir) continue;  // Skip empty directory paths
+    await new Promise((resolve) => {
       client.mkdir(dir, true, (err) => {
         if (err) {
           log('MKDIR WARNING', { dir, error: err.message });
