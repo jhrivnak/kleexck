@@ -276,22 +276,31 @@ async function backupCurrentVersion(client) {
       const versionPath = `${versionDir}/${file.name}`;
       const rollbackPath = `${rollbackDir}/${file.name}`;
 
-      await Promise.all([
-        new Promise((resolve) => {
-          client.rename(currentPath, versionPath, () => resolve());
-        }),
-        new Promise((resolve) => {
-          client.get(currentPath, (err, stream) => {
-            if (err) {
-              log('BACKUP ERROR', { error: err.message });
-              resolve();
-              return;
-            }
-            stream.once('close', resolve);
-            client.put(stream, rollbackPath);
-          });
-        })
-      ]);
+      // Copy to version directory
+      await new Promise((resolve) => {
+        client.get(currentPath, (err, stream) => {
+          if (err) {
+            log('BACKUP ERROR', { error: err.message });
+            resolve();
+            return;
+          }
+          stream.once('close', resolve);
+          client.put(stream, versionPath);
+        });
+      });
+
+      // Copy to rollback directory
+      await new Promise((resolve) => {
+        client.get(currentPath, (err, stream) => {
+          if (err) {
+            log('BACKUP ERROR', { error: err.message });
+            resolve();
+            return;
+          }
+          stream.once('close', resolve);
+          client.put(stream, rollbackPath);
+        });
+      });
     }
     
     log('BACKUP COMPLETE', { version: timestamp });
