@@ -417,7 +417,14 @@ async function rollback() {
     
     // Check if rollback exists
     const rollbackFiles = await listFiles(client, REMOTE_DIRS.ROLLBACK);
-    log('ROLLBACK FILES', { files: rollbackFiles.map(f => f.name) });
+    log('ROLLBACK FILES', { 
+      directory: REMOTE_DIRS.ROLLBACK,
+      files: rollbackFiles.map(f => ({
+        name: f.name, 
+        type: f.type, 
+        size: f.size
+      })) 
+    });
     
     if (rollbackFiles.length === 0) {
       throw new Error('No rollback version available');
@@ -434,22 +441,36 @@ async function rollback() {
       const rollbackPath = `${REMOTE_DIRS.ROLLBACK}/${file.name}`;
       const currentPath = `/${file.name}`;  // Root of /cursor/
       
-      log(`RESTORING: ${file.name} from rollback`);
+      log(`RESTORING: ${file.name} from rollback`, { 
+        rollbackPath, 
+        currentPath 
+      });
       
       try {
         // Download from rollback and upload to current
         const localTempPath = path.join(os.tmpdir(), file.name);
+        log('DOWNLOADING', { 
+          from: rollbackPath, 
+          to: localTempPath 
+        });
         await client.downloadTo(localTempPath, rollbackPath);
+        
+        log('UPLOADING', { 
+          from: localTempPath, 
+          to: currentPath 
+        });
         await client.uploadFrom(localTempPath, currentPath);
         
         // Remove temp file
+        log('REMOVING TEMP FILE', { path: localTempPath });
         fs.unlinkSync(localTempPath);
       } catch (restoreError) {
         log('RESTORE FILE ERROR', { 
           file: file.name, 
           rollbackPath, 
           currentPath,
-          error: restoreError.message 
+          error: restoreError.message,
+          stack: restoreError.stack
         });
       }
     }
@@ -463,7 +484,11 @@ async function rollback() {
     throw error;
   } finally {
     if (client) {
-      client.close();
+      try {
+        client.close();
+      } catch (closeError) {
+        log('CLIENT CLOSE ERROR', { error: closeError.message });
+      }
     }
   }
 }
