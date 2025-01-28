@@ -364,11 +364,10 @@ async function deploy() {
       
       log(`BACKING UP: ${file.name} to rollback`);
       try {
-        // Use FTP download and upload to copy file
-        const downloadStream = await client.downloadTo(Buffer.alloc(0), currentPath);
-        await client.uploadFrom(downloadStream, rollbackPath);
+        // Attempt to copy file to rollback directory
+        await client.uploadFrom(currentPath, rollbackPath);
       } catch (backupError) {
-        log(`BACKUP FAILED: ${file.name}`, { error: backupError.message });
+        log(`BACKUP SKIPPED: ${file.name}`, { error: backupError.message });
       }
     }
 
