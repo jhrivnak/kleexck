@@ -436,23 +436,22 @@ async function rollback() {
       
       log(`RESTORING: ${file.name} from rollback`);
       
-      // Copy rollback file to current directory
-      await new Promise((resolve, reject) => {
-        client.get(rollbackPath, (err, stream) => {
-          if (err) {
-            log('ROLLBACK FILE ERROR', { 
-              file: file.name, 
-              rollbackPath, 
-              error: err.message 
-            });
-            resolve();
-            return;
-          }
-          stream.once('close', resolve);
-          stream.once('error', reject);
-          client.put(stream, currentPath);
+      try {
+        // Download from rollback and upload to current
+        const localTempPath = path.join(os.tmpdir(), file.name);
+        await client.downloadTo(localTempPath, rollbackPath);
+        await client.uploadFrom(localTempPath, currentPath);
+        
+        // Remove temp file
+        fs.unlinkSync(localTempPath);
+      } catch (restoreError) {
+        log('RESTORE FILE ERROR', { 
+          file: file.name, 
+          rollbackPath, 
+          currentPath,
+          error: restoreError.message 
         });
-      });
+      }
     }
     
     log('ROLLBACK SUCCESS');
