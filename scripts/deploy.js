@@ -340,6 +340,9 @@ async function deploy() {
     });
     log('FTP CONNECTION: Established successfully');
 
+    // Ensure rollback directory exists
+    await client.ensureDir(REMOTE_DIRS.ROLLBACK);
+
     // Specify the local and remote paths
     const localDistPath = path.resolve('./dist/kleexck');
     const remoteDistPath = '/';
@@ -350,6 +353,21 @@ async function deploy() {
         const fullPath = path.join(localDistPath, file);
         return fs.statSync(fullPath).isFile();
       });
+
+    // First, backup current files to rollback directory
+    const currentFiles = await listFiles(client, remoteDistPath);
+    for (const file of currentFiles) {
+      if (file.name === '.' || file.name === '..' || file.name === 'rollback' || file.name === 'versions') continue;
+      
+      const currentPath = `/${file.name}`;
+      const rollbackPath = `${REMOTE_DIRS.ROLLBACK}/${file.name}`;
+      
+      log(`BACKING UP: ${file.name} to rollback`);
+      await client.uploadFrom(
+        await (await client.downloadTo(Buffer.alloc(file.size), currentPath)).buffer, 
+        rollbackPath
+      );
+    }
 
     // Upload new files
     for (const file of filesToUpload) {
@@ -424,7 +442,7 @@ async function rollback() {
     throw error;
   } finally {
     if (client) {
-      client.end();
+      client.close();
     }
   }
 }
@@ -451,33 +469,28 @@ async function listVersions() {
     throw error;
   } finally {
     if (client) {
-      client.end();
+      client.close();
     }
   }
 }
 
-// Export commands
+// Parse command line arguments
+const command = process.argv[2];
+
+if (command === 'deploy') {
+  deploy();
+} else if (command === 'rollback') {
+  rollback();
+} else if (command === 'list-versions') {
+  listVersions();
+} else {
+  console.log('Usage: node deploy.js [deploy|rollback|list-versions]');
+  process.exit(1);
+}
+
+// Export commands for potential module usage
 module.exports = {
   deploy,
   rollback,
   listVersions
-};
-
-// If running directly from command line
-if (require.main === module) {
-  const command = process.argv[2];
-  
-  switch (command) {
-    case 'deploy':
-      deploy().catch(console.error);
-      break;
-    case 'rollback':
-      rollback().catch(console.error);
-      break;
-    case 'list-versions':
-      listVersions().catch(console.error);
-      break;
-    default:
-      console.log('Usage: node deploy.js [deploy|rollback|list-versions]');
-  }
-} 
+}; 
