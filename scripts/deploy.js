@@ -2,6 +2,7 @@ const Client = require('basic-ftp');
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
+const os = require('os');
 
 // Ensure logs directory exists
 const logsDir = path.resolve('./logs');
@@ -364,27 +365,15 @@ async function deploy() {
       
       log(`BACKING UP: ${file.name} to rollback`);
       try {
-        // Download file to a buffer and upload to rollback
-        const buffer = await new Promise((resolve, reject) => {
-          const chunks = [];
-          client.get(currentPath, (err, stream) => {
-            if (err) {
-              reject(err);
-              return;
-            }
-            stream.on('data', chunk => chunks.push(chunk));
-            stream.on('end', () => resolve(Buffer.concat(chunks)));
-            stream.on('error', reject);
-          });
-        });
-
-        // Upload buffer to rollback directory
-        await new Promise((resolve, reject) => {
-          client.put(buffer, rollbackPath, err => {
-            if (err) reject(err);
-            else resolve();
-          });
-        });
+        // Download file to local temp directory
+        const localTempPath = path.join(os.tmpdir(), file.name);
+        await client.downloadTo(localTempPath, currentPath);
+        
+        // Upload to rollback directory
+        await client.uploadFrom(localTempPath, rollbackPath);
+        
+        // Remove temp file
+        fs.unlinkSync(localTempPath);
       } catch (backupError) {
         log(`BACKUP SKIPPED: ${file.name}`, { error: backupError.message });
       }
