@@ -1,4 +1,4 @@
-const Client = require('ftp');
+const Client = require('basic-ftp');
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
@@ -56,61 +56,46 @@ function loadFtpConfig() {
   }
 }
 
-function createClient(ftpConfig) {
-  return new Promise((resolve, reject) => {
-    const client = new Client();
-
-    client.on('ready', () => {
-      log('FTP CONNECTION: Established successfully', {
-        host: ftpConfig.host,
-        user: ftpConfig.user
-      });
-      resolve(client);
+async function createClient(ftpConfig) {
+  const client = new Client.Client();
+  
+  try {
+    log('CONNECTING TO FTP', {
+      host: ftpConfig.host,
+      user: ftpConfig.user
     });
-
-    client.on('error', (err) => {
-      log('FTP CONNECTION ERROR:', { 
-        error: err.message,
-        host: ftpConfig.host,
-        user: ftpConfig.user
-      });
-      reject(err);
+    
+    await client.access({
+      host: ftpConfig.host,
+      user: ftpConfig.user,
+      password: ftpConfig.password,
+      port: ftpConfig.port || 21
     });
-
-    try {
-      log('CONNECTING TO FTP', {
-        host: ftpConfig.host,
-        user: ftpConfig.user
-      });
-      
-      client.connect({
-        host: ftpConfig.host,
-        user: ftpConfig.user,
-        password: ftpConfig.password,
-        port: ftpConfig.port || 21
-      });
-    } catch (connectError) {
-      log('CONNECTION ATTEMPT FAILED:', { 
-        error: connectError.message,
-        host: ftpConfig.host,
-        user: ftpConfig.user
-      });
-      reject(connectError);
-    }
-  });
+    
+    log('FTP CONNECTION: Established successfully', {
+      host: ftpConfig.host,
+      user: ftpConfig.user
+    });
+    
+    return client;
+  } catch (err) {
+    log('FTP CONNECTION ERROR:', { 
+      error: err.message,
+      host: ftpConfig.host,
+      user: ftpConfig.user
+    });
+    throw err;
+  }
 }
 
-function listFiles(client, path = '/') {
-  return new Promise((resolve, reject) => {
-    client.list(path, (err, list) => {
-      if (err) {
-        log('LIST ERROR', { error: err.message, path });
-        reject(err);
-        return;
-      }
-      resolve(list || []);
-    });
-  });
+async function listFiles(client, path = '/') {
+  try {
+    const list = await client.list(path);
+    return list;
+  } catch (err) {
+    log('LIST ERROR', { error: err.message, path });
+    throw err;
+  }
 }
 
 async function getAllFiles(client) {
@@ -138,55 +123,44 @@ async function getAllFiles(client) {
   }
 }
 
-function deleteFile(client, filename) {
-  return new Promise((resolve) => {
+async function deleteFile(client, filename) {
+  try {
     // Try to delete both with and without leading slash
     const paths = [filename, `/${filename}`];
-    let completed = 0;
-    let successes = 0;
-
-    paths.forEach(path => {
+    for (const path of paths) {
       log('ATTEMPTING DELETE', { path });
-      client.delete(path, (err) => {
-        completed++;
-        if (err) {
-          log('DELETE ATTEMPT FAILED', { path, error: err.message });
-        } else {
-          log('DELETE SUCCESS', { path });
-          successes++;
-        }
-
-        // Resolve if either path succeeds or both attempts are done
-        if (successes > 0 || completed === paths.length) {
-          resolve();
-        }
-      });
-    });
-  });
+      try {
+        await client.remove(path);
+        log('DELETE SUCCESS', { path });
+        return; // Exit after first successful delete
+      } catch (err) {
+        log('DELETE ATTEMPT FAILED', { path, error: err.message });
+      }
+    }
+  } catch (err) {
+    log('DELETE ERROR', { error: err.message, filename });
+  }
 }
 
-function uploadFile(client, localPath, remotePath) {
-  return new Promise((resolve, reject) => {
+async function uploadFile(client, localPath, remotePath) {
+  try {
     const normalizedLocalPath = localPath.replace(/\\/g, '/');
     log('UPLOADING FILE', { localPath: normalizedLocalPath, remotePath });
     
-    client.put(normalizedLocalPath, remotePath, (err) => {
-      if (err) {
-        log('UPLOAD ERROR', { 
-          localPath: normalizedLocalPath, 
-          remotePath, 
-          error: err.message 
-        });
-        reject(err);
-      } else {
-        log('UPLOAD SUCCESS', { 
-          localPath: normalizedLocalPath, 
-          remotePath 
-        });
-        resolve();
-      }
+    await client.uploadFrom(normalizedLocalPath, remotePath);
+    
+    log('UPLOAD SUCCESS', { 
+      localPath: normalizedLocalPath, 
+      remotePath 
     });
-  });
+  } catch (err) {
+    log('UPLOAD ERROR', { 
+      localPath: normalizedLocalPath, 
+      remotePath, 
+      error: err.message 
+    });
+    throw err;
+  }
 }
 
 async function cleanupOldFiles(client, newFiles) {
@@ -240,14 +214,12 @@ async function ensureRemoteDirectories(client) {
   const dirs = Object.values(REMOTE_DIRS);
   for (const dir of dirs) {
     if (!dir) continue;  // Skip empty directory paths
-    await new Promise((resolve) => {
-      client.mkdir(dir, true, (err) => {
-        if (err) {
-          log('MKDIR WARNING', { dir, error: err.message });
-        }
-        resolve();
-      });
-    });
+    try {
+      await client.ensureDir(dir);
+      log('MKDIR SUCCESS', { dir });
+    } catch (err) {
+      log('MKDIR WARNING', { dir, error: err.message });
+    }
   }
 }
 
@@ -348,50 +320,61 @@ async function verifyDeploymentTarget(client) {
 }
 
 async function deploy() {
-  let client;
+  let client = null;
   try {
-    log('DEPLOYMENT START', { timestamp: getTimestamp() });
-    
-    const ftpConfig = loadFtpConfig();
-    log('FTP CONFIG LOADED');
-    
-    // Build the app
-    log('BUILD START');
+    // Build the project
+    log('STARTING DEPLOYMENT');
     execSync('ng build --configuration=development', { stdio: 'inherit' });
-    log('BUILD SUCCESS');
-    
-    // Connect to FTP
-    client = await createClient(ftpConfig);
-    
-    // Verify TARGET.TXT exists
-    await verifyDeploymentTarget(client);
-    
-    // Ensure directory structure exists
-    await ensureRemoteDirectories(client);
-    
-    // Backup current version
-    await backupCurrentVersion(client);
-    
-    const distPath = './dist/kleexck';
-    const filesToUpload = fs.readdirSync(distPath)
-      .filter(file => file !== 'index.html');
+    log('BUILD COMPLETE');
 
-    log('FILES TO UPLOAD', { files: filesToUpload });
-    
-    // Upload new files to root directory
+    // Load FTP configuration
+    const ftpConfig = JSON.parse(fs.readFileSync('./secret/ftp.json', 'utf8'));
+
+    // Create FTP client
+    client = new Client.Client();
+    await client.access({
+      host: ftpConfig.host,
+      user: ftpConfig.user,
+      password: ftpConfig.password,
+      port: ftpConfig.port || 21
+    });
+    log('FTP CONNECTION: Established successfully');
+
+    // Specify the local and remote paths
+    const localDistPath = path.resolve('./dist/kleexck');
+    const remoteDistPath = '/';
+
+    // Get list of files to upload
+    const filesToUpload = fs.readdirSync(localDistPath)
+      .filter(file => {
+        const fullPath = path.join(localDistPath, file);
+        return fs.statSync(fullPath).isFile();
+      });
+
+    // Upload new files
     for (const file of filesToUpload) {
-      const localPath = path.join(distPath, file);
-      const remotePath = `/${file}`;  // Upload directly to /cursor/
-      await uploadFile(client, localPath, remotePath);
+      const localFilePath = path.join(localDistPath, file);
+      const remoteFilePath = path.posix.join(remoteDistPath, file);
+      
+      log(`UPLOADING: ${file}`);
+      await client.uploadFrom(localFilePath, remoteFilePath);
     }
-    
-    log('DEPLOYMENT SUCCESS', { timestamp: getTimestamp() });
+
+    log('DEPLOYMENT COMPLETE');
   } catch (error) {
-    log('DEPLOYMENT ERROR', { error: error.message, stack: error.stack });
-    throw error;
+    log('DEPLOYMENT FAILED', { 
+      error: error.message, 
+      stack: error.stack 
+    });
+    process.exit(1);
   } finally {
+    // Ensure client is closed if it was opened
     if (client) {
-      client.end();
+      try {
+        await client.close();
+      } catch (closeError) {
+        log('FTP CLIENT CLOSE ERROR', { error: closeError.message });
+      }
     }
   }
 }
