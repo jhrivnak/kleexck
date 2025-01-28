@@ -238,9 +238,7 @@ async function backupCurrentVersion(client) {
     const rollbackDir = REMOTE_DIRS.ROLLBACK;
 
     // Create version directory
-    await new Promise((resolve) => {
-      client.mkdir(versionDir, true, () => resolve());
-    });
+    await client.ensureDir(versionDir);
 
     // Copy current files to both rollback and versions
     for (const file of currentFiles) {
@@ -251,7 +249,7 @@ async function backupCurrentVersion(client) {
       const rollbackPath = `${rollbackDir}/${file.name}`;
 
       // Copy to version directory
-      await new Promise((resolve) => {
+      await new Promise((resolve, reject) => {
         client.get(currentPath, (err, stream) => {
           if (err) {
             log('BACKUP ERROR', { error: err.message });
@@ -259,12 +257,13 @@ async function backupCurrentVersion(client) {
             return;
           }
           stream.once('close', resolve);
+          stream.once('error', reject);
           client.put(stream, versionPath);
         });
       });
 
       // Copy to rollback directory
-      await new Promise((resolve) => {
+      await new Promise((resolve, reject) => {
         client.get(currentPath, (err, stream) => {
           if (err) {
             log('BACKUP ERROR', { error: err.message });
@@ -272,6 +271,7 @@ async function backupCurrentVersion(client) {
             return;
           }
           stream.once('close', resolve);
+          stream.once('error', reject);
           client.put(stream, rollbackPath);
         });
       });
