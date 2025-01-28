@@ -435,8 +435,8 @@ async function rollback() {
     log('CURRENT VERSION BACKED UP', { version: timestamp });
     
     // Move rollback to current
-    for (const file of rollbackFiles) {
-      if (file.name === '.' || file.name === '..') continue;
+    const uploadPromises = rollbackFiles.map(async (file) => {
+      if (file.name === '.' || file.name === '..') return;
       
       const rollbackPath = `${REMOTE_DIRS.ROLLBACK}/${file.name}`;
       const currentPath = `/${file.name}`;  // Root of /cursor/
@@ -472,8 +472,12 @@ async function rollback() {
           error: restoreError.message,
           stack: restoreError.stack
         });
+        throw restoreError; // Rethrow to fail the entire rollback
       }
-    }
+    });
+
+    // Wait for all files to be restored
+    await Promise.all(uploadPromises);
     
     log('ROLLBACK SUCCESS');
   } catch (error) {
