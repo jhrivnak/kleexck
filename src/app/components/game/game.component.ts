@@ -20,7 +20,7 @@ const INITIAL_PLAYER: Player = {
   template: `
     <div class="game-container">
       <div class="game-info">
-        <p>Use arrow keys or WASD to move the red square</p>
+        <p>Use arrow keys or WASD to move the yellow circle</p>
       </div>
       <div class="health-container">
         <div class="hearts">
@@ -174,14 +174,17 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       // Clear canvas
       this.ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Draw player as a red square
-      this.ctx.fillStyle = 'red';
-      this.ctx.fillRect(
-        this.gameState.player.x, 
-        this.gameState.player.y, 
-        this.gameState.player.width, 
-        this.gameState.player.height
+      // Draw player as a yellow circle
+      this.ctx.fillStyle = 'yellow';
+      this.ctx.beginPath();
+      this.ctx.arc(
+        this.gameState.player.x + this.gameState.player.width / 2, 
+        this.gameState.player.y + this.gameState.player.height / 2, 
+        this.gameState.player.width / 2, 
+        0, 
+        Math.PI * 2
       );
+      this.ctx.fill();
 
       // Draw other objects as blue squares
       this.gameState.objects.forEach(obj => {
