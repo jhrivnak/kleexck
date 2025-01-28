@@ -363,10 +363,11 @@ async function deploy() {
       const rollbackPath = `${REMOTE_DIRS.ROLLBACK}/${file.name}`;
       
       log(`BACKING UP: ${file.name} to rollback`);
-      await client.uploadFrom(
-        await (await client.downloadTo(Buffer.alloc(file.size), currentPath)).buffer, 
-        rollbackPath
-      );
+      try {
+        await client.downloadTo(rollbackPath, currentPath);
+      } catch (backupError) {
+        log(`BACKUP FAILED: ${file.name}`, { error: backupError.message });
+      }
     }
 
     // Upload new files
@@ -494,3 +495,4 @@ module.exports = {
   rollback,
   listVersions
 }; 
+
