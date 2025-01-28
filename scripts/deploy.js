@@ -364,27 +364,8 @@ async function deploy() {
       
       log(`BACKING UP: ${file.name} to rollback`);
       try {
-        // Download file to a buffer and then upload to rollback
-        const buffer = await new Promise((resolve, reject) => {
-          const chunks = [];
-          client.get(currentPath, (err, stream) => {
-            if (err) {
-              reject(err);
-              return;
-            }
-            stream.on('data', chunk => chunks.push(chunk));
-            stream.on('end', () => resolve(Buffer.concat(chunks)));
-            stream.on('error', reject);
-          });
-        });
-
-        // Upload buffer to rollback directory
-        await new Promise((resolve, reject) => {
-          client.put(buffer, rollbackPath, err => {
-            if (err) reject(err);
-            else resolve();
-          });
-        });
+        // Attempt to copy file to rollback directory
+        await client.uploadFrom(currentPath, rollbackPath);
       } catch (backupError) {
         log(`BACKUP SKIPPED: ${file.name}`, { error: backupError.message });
       }
