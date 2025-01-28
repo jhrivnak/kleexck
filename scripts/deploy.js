@@ -417,6 +417,8 @@ async function rollback() {
     
     // Check if rollback exists
     const rollbackFiles = await listFiles(client, REMOTE_DIRS.ROLLBACK);
+    log('ROLLBACK FILES', { files: rollbackFiles.map(f => f.name) });
+    
     if (rollbackFiles.length === 0) {
       throw new Error('No rollback version available');
     }
@@ -432,15 +434,22 @@ async function rollback() {
       const rollbackPath = `${REMOTE_DIRS.ROLLBACK}/${file.name}`;
       const currentPath = `/${file.name}`;  // Root of /cursor/
       
+      log(`RESTORING: ${file.name} from rollback`);
+      
       // Copy rollback file to current directory
-      await new Promise((resolve) => {
+      await new Promise((resolve, reject) => {
         client.get(rollbackPath, (err, stream) => {
           if (err) {
-            log('ROLLBACK ERROR', { error: err.message });
+            log('ROLLBACK FILE ERROR', { 
+              file: file.name, 
+              rollbackPath, 
+              error: err.message 
+            });
             resolve();
             return;
           }
           stream.once('close', resolve);
+          stream.once('error', reject);
           client.put(stream, currentPath);
         });
       });
@@ -448,7 +457,10 @@ async function rollback() {
     
     log('ROLLBACK SUCCESS');
   } catch (error) {
-    log('ROLLBACK ERROR', { error: error.message });
+    log('ROLLBACK ERROR', { 
+      error: error.message, 
+      stack: error.stack 
+    });
     throw error;
   } finally {
     if (client) {
